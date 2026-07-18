@@ -101,7 +101,16 @@ body {
    FULL-SCREEN VIDEO BACKGROUND
    =================================== */
 .video-bg {
-  position: fixed; inset: 0; z-index: 1;
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%;
+  /* Use lvh (LARGEST viewport height), not inset:0. inset:0 tracks the dynamic
+     viewport, so when the mobile URL bar retracts on the first scroll a strip
+     at the bottom is left uncovered → the dark section below flashes through.
+     lvh sizes to the bar-hidden height, so the video always covers. */
+  height: 100vh;
+  height: 100lvh;
+  z-index: 1;
   overflow: hidden;
   background: #000;
 }
@@ -209,7 +218,10 @@ body {
      next section peeks in at the bottom ("footer flash"). vh fills the LARGE
      viewport and is fixed (it does not resize as the bar shows/hides), so the
      pinned area always covers the screen. */
-  height: 500vh;
+  /* Scroll length that drives the video. Bigger = more scrolling per second of
+     video = finer, more "in control" scrubbing (was 500vh; a small flick jumped
+     several seconds). 800vh ≈ 25 vh of scroll per second of the 32s clip. */
+  height: 800vh;
 }
 
 .sticky-viewport {
@@ -224,6 +236,7 @@ body {
   left: 0;
   width: 100%;
   height: 100vh;
+  height: 100lvh;   /* match .video-bg so the text layer also always covers */
   pointer-events: none;
 }
 
