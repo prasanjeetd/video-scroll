@@ -33,13 +33,19 @@
    which makes <html>/<body> a scroll container and BREAKS position:sticky
    (the sticky viewport would slide away instead of pinning). `clip` hides
    horizontal overflow without creating a scroll container. */
-html { overflow-x: clip; }
+html {
+  overflow-x: clip;
+  /* Stop rubber-band / scroll-chaining bounce that can flash content at the
+     edges during a fast fling on mobile. */
+  overscroll-behavior-y: none;
+}
 body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
+  overscroll-behavior-y: none;
 }
 
 /* Scrollbar */
@@ -207,8 +213,15 @@ body {
 }
 
 .sticky-viewport {
-  position: sticky;
+  /* FIXED, not sticky. position:sticky can "slip" during a fast momentum
+     scroll on mobile — the compositor briefly detaches it and the section
+     below flashes in, then it snaps back. A fixed overlay (like the video)
+     stays rock-solid at any scroll speed. Once you scroll past the 500vh
+     stage it's naturally covered by the details/footer sections (later in
+     the DOM, same z-index), so no JS show/hide is needed. */
+  position: fixed;
   top: 0;
+  left: 0;
   width: 100%;
   height: 100vh;
   pointer-events: none;
