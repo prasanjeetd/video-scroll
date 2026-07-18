@@ -28,11 +28,14 @@
   let seekWarned    = false;   // one-time warning if video isn't seekable
 
   // ---- Scrub-engine state (continuous rAF loop) ----
-  const EASE      = 0.15;   // how quickly rendered time chases the scroll target (0..1)
-  const MIN_DELTA = 0.02;   // don't bother seeking for sub-frame differences (s)
+  const EASE         = 0.15;   // how quickly rendered time chases the scroll target (0..1)
+  const MIN_DELTA    = 0.05;   // "caught up" tolerance ≈ 1 frame @25fps (s)
+  const SEEK_INTERVAL = 40;    // min ms between seeks (~25/s) — throttle, not a seeking-gate
   let targetTime  = 0;      // where the scroll says the video should be
   let renderTime  = 0;      // eased time we actually seek to (trails targetTime)
   let running     = false;  // is the rAF loop currently scheduled?
+  let lastSeekAt  = 0;      // timestamp (ms) of the last seek, for throttling
+  let stageScrollRange = 0; // cached scrollStage.offsetHeight - innerHeight (refreshed on resize)
 
   // ========================================
   //  PRELOADER — fake progress until video
@@ -153,17 +156,18 @@
   }
 
   function renderLoop() {
-    const stageRect   = scrollStage.getBoundingClientRect();
-    const stageTop    = -stageRect.top;
-    const stageHeight = scrollStage.offsetHeight - window.innerHeight;
+    const stageTop = -scrollStage.getBoundingClientRect().top;
 
-    let progress = stageHeight > 0 ? stageTop / stageHeight : 0;
+    // Denominator is cached (refreshed on resize) so the mobile URL bar toggling
+    // window.innerHeight mid-scroll doesn't nudge the mapping.
+    let progress = stageScrollRange > 0 ? stageTop / stageScrollRange : 0;
     progress = Math.max(0, Math.min(1, progress));
 
     // UI chrome tracks the raw scroll position (no easing needed).
     updateChrome(progress, stageTop);
 
-    let settled = true;
+    let settled  = true;   // eased time has reached the scroll target
+    let caughtUp = true;   // the real video frame has reached the eased time
     if (videoReady && videoDuration && isFinite(videoDuration)) {
       // Chrome only allows seeking when the server supports HTTP range requests.
       // Without it, video.seekable is empty ([0,0]) and seeks are ignored.
@@ -175,16 +179,24 @@
         renderTime += (targetTime - renderTime) * EASE;
         if (Math.abs(targetTime - renderTime) > 0.001) settled = false;
 
-        // Seek-gating: only issue a seek when the decoder isn't already seeking
-        // and the move is worth a frame. Skipping frames mid-seek is the core
-        // fix for the mobile "sticky"/thrashing jank.
-        if (!video.seeking && isFinite(renderTime) &&
-            Math.abs(video.currentTime - renderTime) > MIN_DELTA) {
+        // Has the ACTUAL video frame reached the eased time yet? On a slow
+        // decoder (low-end phone) seeks lag well behind renderTime — we must not
+        // let the loop sleep until this is true, or it freezes on a stale frame.
+        const delta = Math.abs(video.currentTime - renderTime);
+        if (delta > MIN_DELTA) caughtUp = false;
+
+        // Time-throttled seek. NOT gated on video.seeking (that can wedge stuck
+        // on a slow decoder and block every future seek). Because renderTime is
+        // eased, each throttled seek is a small nearby step the decoder handles.
+        const now = performance.now();
+        if (delta > MIN_DELTA && isFinite(renderTime) &&
+            now - lastSeekAt >= SEEK_INTERVAL) {
+          lastSeekAt = now;
           video.currentTime = renderTime;
           // Keep the blurred backdrop in sync, but only while it's visible
           // (hidden on mobile → offsetParent null → skipped to save battery).
           if (videoBlur && videoBlur.offsetParent !== null &&
-              !videoBlur.seeking && videoBlur.seekable && videoBlur.seekable.length) {
+              videoBlur.seekable && videoBlur.seekable.length) {
             try { videoBlur.currentTime = renderTime; } catch (e) { /* not ready */ }
           }
         }
@@ -200,9 +212,10 @@
       }
     }
 
-    // Keep looping while the video is still catching up to the scroll target;
-    // otherwise suspend (a new scroll/resize will restart us) to save battery.
-    if (settled) {
+    // Suspend ONLY when the ease has settled AND the real video frame has caught
+    // up. Otherwise keep the loop alive so a slow seek is never abandoned
+    // mid-flight (the freeze bug). A scroll/resize restarts it via ensureLoop().
+    if (settled && caughtUp) {
       running = false;
     } else {
       requestAnimationFrame(renderLoop);
@@ -216,11 +229,21 @@
     }
   }
 
-  // Any input that can move the page (or change its metrics) wakes the loop.
-  // Reading the position happens inside the loop, so sparse iOS momentum
-  // scroll events still produce smooth updates.
-  ['scroll', 'wheel', 'touchmove', 'resize', 'orientationchange'].forEach((evt) => {
+  // Cache the scroll range (denominator for progress). Refreshed only on resize,
+  // so the mobile URL bar changing innerHeight mid-scroll doesn't shift the map.
+  function measure() {
+    stageScrollRange = scrollStage.offsetHeight - window.innerHeight;
+  }
+  measure();
+
+  // Any input that can move the page wakes the loop. Reading the position
+  // happens inside the loop, so sparse iOS momentum events still update smoothly.
+  ['scroll', 'wheel', 'touchmove'].forEach((evt) => {
     window.addEventListener(evt, ensureLoop, { passive: true });
+  });
+  // Layout changes: re-measure the range, then run.
+  ['resize', 'orientationchange'].forEach((evt) => {
+    window.addEventListener(evt, () => { measure(); ensureLoop(); }, { passive: true });
   });
 
   // ========================================
