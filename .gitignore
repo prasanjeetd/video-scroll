@@ -1,0 +1,29 @@
+# ============================================================
+#  Track ONLY the files the site needs to run.
+# ============================================================
+
+# ---- Videos ----
+# Ignore everything in videos/, then re-include ONLY the two
+# web-optimized clips the page actually plays. This keeps the
+# large source/unused footage (30–45 MB each) out of the repo.
+videos/*
+!videos/wedding.mp4
+!videos/wedding-bg.mp4
+
+# ---- Project notes (not needed to run the site) ----
+video.info.txt
+# (videos/timing.txt is already excluded by videos/* above)
+
+# ---- Dependencies / build / temp ----
+node_modules/
+*.log
+npm-debug.log*
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Local Claude Code config / memory ----
+.claude/

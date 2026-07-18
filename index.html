@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Trisha & Mainak — A Royal Indian Wedding Celebration. 8th March 2026, Kolkata.">
+  <title>Trisha & Mainak — শুভ বিবাহ</title>
+  <link rel="stylesheet" href="style.css?v=2">
+</head>
+<body>
+
+  <!-- Preloader -->
+  <div class="preloader" id="preloader">
+    <span class="preloader__bengali">ওঁ গণেশায় নমঃ</span>
+    <span class="preloader__logo">Trisha & Mainak</span>
+    <div class="preloader__track"><div class="preloader__fill" id="preloaderFill"></div></div>
+    <span class="preloader__pct" id="preloaderPct">0 %</span>
+  </div>
+
+  <!-- Fixed full-screen video -->
+  <div class="video-bg" id="videoBg">
+    <!-- Blurred fill (tiny low-res clip): hides letterbox on wide screens so a
+         portrait video never leaves dead black bars. -->
+    <video class="video-bg__blur" id="mainVideoBlur" muted playsinline preload="auto" aria-hidden="true" tabindex="-1">
+      <source src="videos/wedding-bg.mp4" type="video/mp4">
+    </video>
+    <!-- Sharp main video: on wide screens shown whole & native (no upscale/crop). -->
+    <video class="video-bg__main" id="mainVideo" muted playsinline preload="auto">
+      <source src="videos/wedding.mp4" type="video/mp4">
+    </video>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="nav" id="nav">
+    <a href="#" class="nav__logo">T & M</a>
+    <div class="nav__dots">
+      <button class="nav__dot active" data-section="0" data-label="Welcome" aria-label="Welcome section"></button>
+      <button class="nav__dot" data-section="1" data-label="Bride" aria-label="Bride section"></button>
+      <button class="nav__dot" data-section="2" data-label="Groom" aria-label="Groom section"></button>
+      <button class="nav__dot" data-section="3" data-label="Ceremony" aria-label="Ceremony section"></button>
+    </div>
+    <div class="nav__links">
+      <a href="#details" class="nav__link">Details</a>
+      <a href="#footer" class="nav__link">Venue</a>
+    </div>
+  </nav>
+
+  <!-- ============================
+       SCROLL STAGE — drives video
+       ============================ -->
+  <div class="scroll-stage" id="scrollStage">
+    <div class="sticky-viewport">
+
+      <!-- CHAPTER 0 : Welcome / Hero -->
+      <div class="chapter" data-chapter="0">
+        <!-- Top-left: Couple names -->
+        <div class="ch-block ch-block--top-left">
+          <h1 class="ch-hero-title anim" data-anim="fade-down">Trisha<br><span class="amp">&</span> Mainak</h1>
+          <span class="ch-hero-sub anim" data-anim="fade-up">৮ই মার্চ, ২০২৬ · কলকাতা</span>
+        </div>
+        <!-- Bottom-right: Welcome quote -->
+        <div class="ch-block ch-block--bottom-right">
+          <div class="ch-divider anim" data-anim="scale-x"></div>
+          <p class="ch-tagline anim" data-anim="fade-up">শুভ বিবাহ অনুষ্ঠানে স্বাগতম</p>
+          <p class="ch-tagline-en anim" data-anim="fade-up">Welcome to the auspicious wedding ceremony</p>
+        </div>
+        <!-- Bottom-center scroll cue -->
+        <div class="ch-block ch-block--bottom-center">
+          <div class="scroll-cue anim" data-anim="fade-up">
+            <span class="scroll-cue__text">Scroll</span>
+            <span class="scroll-cue__line"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHAPTER 1 : The Bride — মুকুটের পরিবার -->
+      <div class="chapter" data-chapter="1">
+        <div class="ch-block ch-block--left-center">
+          <span class="ch-label anim" data-anim="fade-right">মুকুটের পরিবার</span>
+          <h2 class="ch-heading anim" data-anim="fade-right">Trisha<br>Chakraborty</h2>
+          <p class="ch-bengali-name anim" data-anim="fade-right">পাত্রী: কল্যাণীয়া তৃষা চক্রবর্তী</p>
+        </div>
+        <div class="ch-block ch-block--bottom-right">
+          <p class="ch-desc anim" data-anim="fade-up">
+            <span class="ch-detail-line">Father: Mr. Tapas Kumar Chakraborty</span>
+            <span class="ch-detail-line">Mother: Mrs. Banani Chakraborty</span>
+            <span class="ch-detail-line">Dumdum Cantonment, North 24 Parganas</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- CHAPTER 2 : The Groom — টোপরের পরিবার -->
+      <div class="chapter" data-chapter="2">
+        <div class="ch-block ch-block--right-center">
+          <span class="ch-label anim" data-anim="fade-left">টোপরের পরিবার</span>
+          <h2 class="ch-heading anim" data-anim="fade-left">Mainak<br>Chakraborty</h2>
+          <p class="ch-bengali-name anim" data-anim="fade-left">পাত্র: কল্যাণীয় মৈনাক চক্রবর্তী</p>
+        </div>
+        <div class="ch-block ch-block--bottom-left">
+          <p class="ch-desc anim" data-anim="fade-up">
+            <span class="ch-detail-line">Father: Mr. Gopal Chakraborty</span>
+            <span class="ch-detail-line">Mother: Mrs. Sabita Chakraborty</span>
+            <span class="ch-detail-line">Ashoknagar, North 24 Parganas</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- CHAPTER 3 : The Ceremony — শুভবিবাহ -->
+      <div class="chapter" data-chapter="3">
+        <div class="ch-block ch-block--top-right">
+          <span class="ch-label anim" data-anim="fade-left">শুভবিবাহ</span>
+          <h2 class="ch-heading anim" data-anim="fade-left">The Sacred<br>Union</h2>
+        </div>
+        <div class="ch-block ch-block--bottom-left">
+          <p class="ch-quote anim" data-anim="fade-up">অগ্নিকে সাক্ষী রেখে উচ্চারিত হলো চিরকালের শপথ</p>
+          <p class="ch-quote-en anim" data-anim="fade-up">With the holy fire as witness, the eternal vows were taken</p>
+        </div>
+        <div class="ch-block ch-block--bottom-right">
+          <p class="ch-desc anim" data-anim="fade-up">
+            <span class="ch-detail-line">মালা বদলে বাঁধা পড়লো দুটি হৃদয়</span>
+            <span class="ch-detail-line ch-detail-en">Two hearts bound by the exchange of garlands,</span>
+            <span class="ch-detail-en">the first promise of love</span>
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============================
+       DETAILS SECTION — Event Info
+       ============================ -->
+  <section class="details-section" id="details">
+    <div class="details__header">
+      <p class="details__label anim-scroll" data-anim="fade-up">সারলিপি</p>
+      <h2 class="details__title anim-scroll" data-anim="fade-up">Wedding Details</h2>
+    </div>
+    <div class="details__grid">
+      <!-- Date card -->
+      <div class="detail-card anim-scroll" data-anim="fade-up">
+        <div class="detail-card__icon">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <h3 class="detail-card__title">Date & Day</h3>
+        <p class="detail-card__bengali">১৯শে ফাল্গুন, ১৪৩২</p>
+        <p class="detail-card__desc">8th March, 2026 · Wednesday</p>
+      </div>
+      <!-- Time card -->
+      <div class="detail-card anim-scroll" data-anim="fade-up">
+        <div class="detail-card__icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <h3 class="detail-card__title">বিবাহ লগ্ন</h3>
+        <p class="detail-card__bengali">সন্ধ্যা লগ্ন: ৮:২৯ ঘটিকায়</p>
+        <p class="detail-card__desc">Evening Lagna: 8:29 PM</p>
+        <p class="detail-card__bengali" style="margin-top:8px">রাত্রি: ২:৫৬ ঘটিকায়</p>
+        <p class="detail-card__desc">Night: 2:56 AM</p>
+      </div>
+      <!-- Venue card -->
+      <div class="detail-card anim-scroll" data-anim="fade-up">
+        <div class="detail-card__icon">
+          <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <h3 class="detail-card__title">Venue</h3>
+        <p class="detail-card__bengali">বসুমতী ভিলা</p>
+        <p class="detail-card__desc">Basumati Villa</p>
+        <p class="detail-card__address">15, Mukund Das Road<br>Near 3 No. Railgate, Dumdum Cantonment<br>Kolkata - 700065</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================
+       FOOTER / CTA
+       ============================ -->
+  <footer class="footer-section" id="footer">
+    <div class="footer__cta">
+      <p class="footer__cta-label anim-scroll" data-anim="fade-up">আমন্ত্রণ</p>
+      <h2 class="footer__cta-heading anim-scroll" data-anim="fade-up">পরম করুণাময় ঈশ্বরের কৃপায়<br>ও উভয় পরিবারের আশীর্বাদে</h2>
+      <p class="footer__cta-english anim-scroll" data-anim="fade-up">By the grace of the Almighty and the blessings of both families,<br>we cordially invite you</p>
+      <a href="#" class="footer__cta-btn anim-scroll" data-anim="fade-up">
+        আশীর্বাদ করবেন · Bless Us
+        <svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+    </div>
+    <div class="footer__bottom">
+      <span class="footer__copy">Trisha & Mainak · 8th March 2026 · Kolkata</span>
+      <div class="footer__venue">
+        <span class="footer__venue-text">বসুমতী ভিলা, দমদম ক্যান্টনমেন্ট</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scroll progress -->
+  <div class="progress-bar" id="progressBar"></div>
+
+  <script src="script.js?v=2"></script>
+</body>
+</html>
