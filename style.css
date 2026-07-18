@@ -198,10 +198,12 @@ body {
 .scroll-stage {
   position: relative;
   z-index: 10;
-  /* svh = small viewport height: stable when the mobile address bar shows/hides,
-     unlike vh/dvh which resize mid-scroll and cause jumps. vh is the fallback. */
+  /* Use vh, NOT svh. svh = SMALL viewport (address bar shown); when the bar
+     hides mid-scroll the pinned hero becomes shorter than the screen and the
+     next section peeks in at the bottom ("footer flash"). vh fills the LARGE
+     viewport and is fixed (it does not resize as the bar shows/hides), so the
+     pinned area always covers the screen. */
   height: 500vh;
-  height: 500svh;
 }
 
 .sticky-viewport {
@@ -209,7 +211,6 @@ body {
   top: 0;
   width: 100%;
   height: 100vh;
-  height: 100svh;
   pointer-events: none;
 }
 
