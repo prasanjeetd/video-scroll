@@ -25,8 +25,14 @@
   let videoReady    = false;   // true once we can scrub the video
   let isReady       = false;   // true once preloader is dismissed
   let currentChapter = -1;
-  let ticking       = false;
   let seekWarned    = false;   // one-time warning if video isn't seekable
+
+  // ---- Scrub-engine state (continuous rAF loop) ----
+  const EASE      = 0.15;   // how quickly rendered time chases the scroll target (0..1)
+  const MIN_DELTA = 0.02;   // don't bother seeking for sub-frame differences (s)
+  let targetTime  = 0;      // where the scroll says the video should be
+  let renderTime  = 0;      // eased time we actually seek to (trails targetTime)
+  let running     = false;  // is the rAF loop currently scheduled?
 
   // ========================================
   //  PRELOADER — fake progress until video
@@ -50,47 +56,46 @@
     pctLabel.textContent = '100 %';
     setTimeout(() => {
       preloader.classList.add('hidden');
-      // trigger hero chapter
+      // trigger hero chapter + kick the scrub loop
       activateChapter(0);
-    }, 500);
+      ensureLoop();
+    }, 250);
   }
 
-  // ---- Video readiness events ----
+  // ---- Video readiness ----
+  // The video is usable for scrubbing as soon as the first frame is decoded
+  // (readyState >= 2 / HAVE_CURRENT_DATA). We do NOT wait for canplaythrough
+  // (full buffering) — that's why the loader used to hang on the 4s safety net.
+
+  function markReadyAndDismiss() {
+    if (video.duration && isFinite(video.duration)) videoDuration = video.duration;
+    if (!videoDuration || !isFinite(videoDuration)) videoDuration = 30;
+    videoReady = true;
+    dismissPreloader();
+  }
 
   video.addEventListener('loadedmetadata', () => {
     videoDuration = video.duration;
-    videoReady = true;
+    videoReady = true;   // seekable now; keep buffering in the background
     console.log('[Cinematic] Video metadata loaded. Duration:', videoDuration);
   });
 
-  video.addEventListener('canplaythrough', () => {
-    if (!videoReady) {
-      videoDuration = video.duration || 30;
-      videoReady = true;
-    }
-    dismissPreloader();
-  });
+  // First frame ready → reveal the page immediately.
+  video.addEventListener('loadeddata', markReadyAndDismiss);
+  video.addEventListener('canplay', markReadyAndDismiss);
 
-  // Fallback: if canplaythrough doesn't fire quickly
-  video.addEventListener('loadeddata', () => {
-    if (video.readyState >= 2) {
-      videoDuration = video.duration || 30;
-      videoReady = true;
-      setTimeout(() => {
-        dismissPreloader();
-      }, 800);
-    }
-  });
+  // CRUCIAL: on fast/cached loads the events above can fire BEFORE this script
+  // attaches its listeners. Check the current state right now so we don't fall
+  // through to the safety-net timer (that was the ~4.8s stall).
+  if (video.readyState >= 2) markReadyAndDismiss();
 
-  // Safety net — dismiss after 4s no matter what
+  // Safety net — only matters if the video genuinely stalls.
   setTimeout(() => {
     videoDuration = video.duration || 30;
-    if (videoDuration && isFinite(videoDuration)) {
-      videoReady = true;
-    }
+    if (videoDuration && isFinite(videoDuration)) videoReady = true;
     dismissPreloader();
     console.log('[Cinematic] Safety net fired. Duration:', videoDuration, 'Ready:', videoReady);
-  }, 4000);
+  }, 1800);
 
   // ========================================
   //  CHAPTER MANAGEMENT
@@ -124,42 +129,63 @@
   }
 
   // ========================================
-  //  SCROLL HANDLER
-  //  Maps scrollY → video.currentTime
-  //  and determines active chapter
+  //  SCRUB ENGINE — continuous rAF loop
+  //  Reads scroll position every frame (robust to iOS momentum, where scroll
+  //  events fire in bursts), EASES the video time toward it, and GATES seeks so
+  //  we never queue a new seek while the decoder is still busy. This is what
+  //  makes scrubbing smooth instead of steppy/janky, especially on mobile.
   // ========================================
-  function onScroll() {
-    // IMPORTANT: Always reset ticking first so future scroll events are not blocked
-    ticking = false;
+  const scrollCue = document.querySelector('.scroll-cue');
 
-    const stageRect  = scrollStage.getBoundingClientRect();
-    const stageTop   = -stageRect.top;  // how far we've scrolled into the stage
+  function updateChrome(progress, stageTop) {
+    // Active chapter
+    const chapterSize = 1 / TOTAL_CHAPTERS;
+    let chIdx = Math.min(Math.floor(progress / chapterSize), TOTAL_CHAPTERS - 1);
+    activateChapter(chIdx);
+    // Nav background
+    nav.classList.toggle('scrolled', stageTop > 80);
+    // Scroll cue
+    if (scrollCue) scrollCue.style.opacity = progress < 0.05 ? '1' : '0';
+    // Global progress bar
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const globalProgress = docHeight > 0 ? (window.scrollY / docHeight) : 0;
+    progressBar.style.width = (globalProgress * 100) + '%';
+  }
+
+  function renderLoop() {
+    const stageRect   = scrollStage.getBoundingClientRect();
+    const stageTop    = -stageRect.top;
     const stageHeight = scrollStage.offsetHeight - window.innerHeight;
 
-    if (stageHeight <= 0) return;
-
-    // Normalised progress 0 → 1 across the scroll stage
-    let progress = stageTop / stageHeight;
+    let progress = stageHeight > 0 ? stageTop / stageHeight : 0;
     progress = Math.max(0, Math.min(1, progress));
 
-    // --- Scrub video (only if video is ready AND actually seekable) ---
+    // UI chrome tracks the raw scroll position (no easing needed).
+    updateChrome(progress, stageTop);
+
+    let settled = true;
     if (videoReady && videoDuration && isFinite(videoDuration)) {
-      // Chrome only allows seeking when the server supports HTTP range
-      // requests. If it doesn't, video.seekable is empty ([0,0]) and every
-      // currentTime write is silently ignored — the video appears frozen.
+      // Chrome only allows seeking when the server supports HTTP range requests.
+      // Without it, video.seekable is empty ([0,0]) and seeks are ignored.
       const seekable = video.seekable.length &&
                        video.seekable.end(video.seekable.length - 1) > 0;
       if (seekable) {
-        const targetTime = progress * videoDuration;
-        if (isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.05) {
-          video.currentTime = targetTime;
-          // Keep the blurred backdrop scrubbed in sync — but only when it's
-          // actually visible. On mobile it's display:none (offsetParent null),
-          // so we skip it to save battery/decoding. Heavily blurred, so a frame
-          // of drift is invisible anyway.
+        targetTime = progress * videoDuration;
+        // Ease the rendered time toward the scroll target (weighted, cinematic).
+        renderTime += (targetTime - renderTime) * EASE;
+        if (Math.abs(targetTime - renderTime) > 0.001) settled = false;
+
+        // Seek-gating: only issue a seek when the decoder isn't already seeking
+        // and the move is worth a frame. Skipping frames mid-seek is the core
+        // fix for the mobile "sticky"/thrashing jank.
+        if (!video.seeking && isFinite(renderTime) &&
+            Math.abs(video.currentTime - renderTime) > MIN_DELTA) {
+          video.currentTime = renderTime;
+          // Keep the blurred backdrop in sync, but only while it's visible
+          // (hidden on mobile → offsetParent null → skipped to save battery).
           if (videoBlur && videoBlur.offsetParent !== null &&
-              videoBlur.seekable && videoBlur.seekable.length) {
-            try { videoBlur.currentTime = targetTime; } catch (e) { /* not ready */ }
+              !videoBlur.seeking && videoBlur.seekable && videoBlur.seekable.length) {
+            try { videoBlur.currentTime = renderTime; } catch (e) { /* not ready */ }
           }
         }
       } else if (!seekWarned) {
@@ -174,33 +200,28 @@
       }
     }
 
-    // --- Determine active chapter (ALWAYS runs, independent of video) ---
-    const chapterSize = 1 / TOTAL_CHAPTERS;
-    let chIdx = Math.floor(progress / chapterSize);
-    chIdx = Math.min(chIdx, TOTAL_CHAPTERS - 1);
-    activateChapter(chIdx);
-
-    // --- Nav background ---
-    nav.classList.toggle('scrolled', stageTop > 80);
-
-    // --- Hide scroll cue after a bit of scroll ---
-    const scrollCue = document.querySelector('.scroll-cue');
-    if (scrollCue) {
-      scrollCue.style.opacity = progress < 0.05 ? '1' : '0';
+    // Keep looping while the video is still catching up to the scroll target;
+    // otherwise suspend (a new scroll/resize will restart us) to save battery.
+    if (settled) {
+      running = false;
+    } else {
+      requestAnimationFrame(renderLoop);
     }
-
-    // --- Progress bar ---
-    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-    const globalProgress = docHeight > 0 ? (window.scrollY / docHeight) : 0;
-    progressBar.style.width = (globalProgress * 100) + '%';
   }
 
-  window.addEventListener('scroll', () => {
-    if (!ticking) {
-      ticking = true;
-      requestAnimationFrame(onScroll);
+  function ensureLoop() {
+    if (!running) {
+      running = true;
+      requestAnimationFrame(renderLoop);
     }
-  }, { passive: true });
+  }
+
+  // Any input that can move the page (or change its metrics) wakes the loop.
+  // Reading the position happens inside the loop, so sparse iOS momentum
+  // scroll events still produce smooth updates.
+  ['scroll', 'wheel', 'touchmove', 'resize', 'orientationchange'].forEach((evt) => {
+    window.addEventListener(evt, ensureLoop, { passive: true });
+  });
 
   // ========================================
   //  NAV DOT CLICK — scroll to chapter

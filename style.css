@@ -198,13 +198,18 @@ body {
 .scroll-stage {
   position: relative;
   z-index: 10;
+  /* svh = small viewport height: stable when the mobile address bar shows/hides,
+     unlike vh/dvh which resize mid-scroll and cause jumps. vh is the fallback. */
   height: 500vh;
+  height: 500svh;
 }
 
 .sticky-viewport {
   position: sticky;
   top: 0;
-  width: 100%; height: 100vh;
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
   pointer-events: none;
 }
 
