@@ -287,13 +287,39 @@
   document.querySelectorAll('.anim-scroll').forEach((el) => io.observe(el));
 
   // ========================================
-  //  PAUSE VIDEO — we control time manually
+  //  PRIME & FREEZE — we control time manually.
+  //  iOS Safari does not load or PAINT any video frame until playback has
+  //  started once (preload is mostly ignored): without this, iPhones show a
+  //  black screen while everything else works. So: play muted for one frame,
+  //  then freeze. Muted+playsinline autoplay is allowed on iOS; if it's still
+  //  rejected (e.g. Low Power Mode), retry on the first touch/click.
+  //  Harmless on Chrome/Android/desktop.
   // ========================================
-  video.pause();
-  video.addEventListener('play', () => video.pause());
-  if (videoBlur) {
-    videoBlur.pause();
-    videoBlur.addEventListener('play', () => videoBlur.pause());
+  let primed = false;
+  function primeVideo() {
+    if (primed) return;
+    const tryPrime = (v) => {
+      if (!v) return;
+      const p = v.play();
+      if (p && p.then) {
+        p.then(() => {
+          primed = true;
+          // let one frame present, then freeze; the scrub loop owns time now
+          requestAnimationFrame(() => { v.pause(); });
+        }).catch(() => { /* autoplay rejected — gesture listener retries */ });
+      } else {
+        v.pause();
+        primed = true;
+      }
+    };
+    tryPrime(video);
+    // Blur backdrop is desktop-only (display:none on phones) — prime it only
+    // where visible so mobiles don't decode a second stream.
+    if (videoBlur && videoBlur.offsetParent !== null) tryPrime(videoBlur);
   }
+  primeVideo();
+  ['touchstart', 'click'].forEach((evt) => {
+    window.addEventListener(evt, () => { if (!primed) primeVideo(); }, { passive: true });
+  });
 
 })();
