@@ -20,6 +20,17 @@
   const dots        = [...document.querySelectorAll('.nav__dot')];
   const chapters    = [...document.querySelectorAll('.chapter')];
 
+  // ---- Device-based source pick ----
+  // Phones get a 540p short-GOP clip (keyframe every 4 frames): scroll-seeking
+  // decodes at most 4 tiny frames, cheap and UNIFORM even on budget SoCs
+  // (Moto G class). The HD file's 12-frame GOPs at 1080×1920 made seek cost
+  // oscillate 1–12 frames there → "sticky / some scenes fast, some slow".
+  // Bonus: phones download 4.9MB instead of the HD file. Set src before any
+  // readiness listeners so loading starts once, with the right file.
+  const isPhone = matchMedia('(pointer: coarse)').matches &&
+                  Math.min(screen.width, screen.height) <= 820;
+  video.src = isPhone ? 'videos/wedding-mobile.mp4' : 'videos/wedding.mp4';
+
   const TOTAL_CHAPTERS = chapters.length;  // 4
   let videoDuration = 0;
   let videoReady    = false;   // true once we can scrub the video

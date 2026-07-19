@@ -24,10 +24,11 @@
     <video class="video-bg__blur" id="mainVideoBlur" muted playsinline preload="auto" aria-hidden="true" tabindex="-1">
       <source src="videos/wedding-bg.mp4" type="video/mp4">
     </video>
-    <!-- Sharp main video: on wide screens shown whole & native (no upscale/crop). -->
-    <video class="video-bg__main" id="mainVideo" muted playsinline preload="auto">
-      <source src="videos/wedding.mp4" type="video/mp4">
-    </video>
+    <!-- Sharp main video. NO hardcoded <source>: script.js picks the file per
+         device (phones get videos/wedding-mobile.mp4 — short-GOP, cheap to
+         seek on budget SoCs; desktop gets videos/wedding.mp4 HD) so phones
+         never download the HD file. -->
+    <video class="video-bg__main" id="mainVideo" muted playsinline preload="auto"></video>
   </div>
 
   <!-- Navigation -->

@@ -9,6 +9,7 @@
 videos/*
 !videos/wedding.mp4
 !videos/wedding-bg.mp4
+!videos/wedding-mobile.mp4
 
 # ---- Project notes (not needed to run the site) ----
 video.info.txt
