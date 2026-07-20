@@ -112,7 +112,9 @@ body {
   height: 100lvh;
   z-index: 1;
   overflow: hidden;
-  background: #000;
+  /* Poster behind everything: on slow networks (or blocked autoplay) the hero
+     shows the designed first frame instead of a black screen. */
+  background: #000 url('videos/poster.jpg') center / cover no-repeat;
 }
 .video-bg__blur,
 .video-bg__main {
@@ -120,6 +122,10 @@ body {
   width: 100%; height: 100%;
   display: block;
 }
+
+/* Slight micro-lift: restores the "bite" that compression flattens.
+   GPU-composited, costs nothing at runtime. */
+.video-bg__main { filter: contrast(1.035) saturate(1.06); }
 
 /* Default = portrait / mobile viewports (narrower than the 9:16 video).
    The main video fills the screen sharply with only a tiny top/bottom crop;
@@ -140,6 +146,34 @@ body {
     transform: scale(1.12);
     filter: blur(34px) brightness(0.5) saturate(1.15);
   }
+}
+
+/* ===================================
+   FILM GRAIN OVERLAY
+   Sits between the video (z:1) and the content layers (z:10+). Adds cinematic
+   texture and visually masks compression banding in soft gradients (clouds,
+   golden light) — lower-res rungs read as "filmic" instead of "compressed".
+   =================================== */
+.grain {
+  position: fixed;
+  top: 0; left: 0; width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  animation: grain-shift 0.9s steps(3) infinite;
+}
+@keyframes grain-shift {
+  0%   { background-position: 0 0; }
+  33%  { background-position: -45px 30px; }
+  66%  { background-position: 30px -45px; }
+  100% { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .grain { animation: none; }
 }
 
 /* ===================================
@@ -187,7 +221,26 @@ body {
   box-shadow: 0 0 10px rgba(201,168,124,0.45);
 }
 
-.nav__links { display: flex; gap: 26px; }
+.nav__links { display: flex; gap: 26px; align-items: center; }
+
+/* Sound toggle — speaker icon; waves shown when music is on, X when off */
+.nav__sound {
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.3s;
+}
+.nav__sound:hover { opacity: 1; }
+.nav__sound svg {
+  width: 18px; height: 18px;
+  stroke: var(--text-primary); stroke-width: 1.6; fill: none;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.nav__sound .snd-wave { display: none; }
+.nav__sound .snd-off  { stroke: var(--accent); }
+.nav__sound.on .snd-wave { display: initial; }
+.nav__sound.on .snd-off  { display: none; }
 .nav__link {
   font-size: 0.72rem; font-weight: 400;
   letter-spacing: 0.1em;
@@ -687,7 +740,8 @@ body {
    RESPONSIVE
    =================================== */
 @media (max-width: 768px) {
-  .nav__links { display: none; }
+  /* Hide the text links on mobile but KEEP the sound toggle visible */
+  .nav__links .nav__link { display: none; }
   .ch-block { max-width: 260px; }
 
   .ch-block--right-center,

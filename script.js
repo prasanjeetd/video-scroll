@@ -20,16 +20,27 @@
   const dots        = [...document.querySelectorAll('.nav__dot')];
   const chapters    = [...document.querySelectorAll('.chapter')];
 
-  // ---- Device-based source pick ----
-  // Phones get a 540p short-GOP clip (keyframe every 4 frames): scroll-seeking
-  // decodes at most 4 tiny frames, cheap and UNIFORM even on budget SoCs
-  // (Moto G class). The HD file's 12-frame GOPs at 1080×1920 made seek cost
-  // oscillate 1–12 frames there → "sticky / some scenes fast, some slow".
-  // Bonus: phones download 4.9MB instead of the HD file. Set src before any
-  // readiness listeners so loading starts once, with the right file.
-  const isPhone = matchMedia('(pointer: coarse)').matches &&
-                  Math.min(screen.width, screen.height) <= 820;
-  video.src = isPhone ? 'videos/wedding-mobile.mp4' : 'videos/wedding.mp4';
+  // ---- Quality ladder (start low, climb) ----
+  // EVERY device starts on the smallest rung → fast first load on any network.
+  // The capability controller (below) then background-fetches the next rung and
+  // upgrades ONLY when the user is idle and the device has PROVEN decode
+  // headroom via measured seek latency. Short GOPs (keyint 4/6) keep scroll-
+  // seeking cheap and uniform even on weak SoCs.
+  const RUNGS = [
+    { src: 'videos/wedding-540.mp4',  h: 960  },
+    { src: 'videos/wedding-720.mp4',  h: 1280 },
+    { src: 'videos/wedding-1080.mp4', h: 1920 },
+  ];
+  // Ceiling by NEED: never fetch more pixels than the display can actually show.
+  const needH = Math.max(window.innerHeight, screen.height) *
+                (window.devicePixelRatio || 1);
+  let ceiling = RUNGS.findIndex((r) => r.h >= needH);
+  if (ceiling === -1) ceiling = RUNGS.length - 1;
+  // A previous visit may have PROVEN a lower decode limit — respect it.
+  const savedCeil = parseInt(localStorage.getItem('cine-rung') || '', 10);
+  if (!isNaN(savedCeil)) ceiling = Math.min(ceiling, savedCeil);
+  let rung = 0;
+  video.src = RUNGS[0].src;
 
   const TOTAL_CHAPTERS = chapters.length;  // 4
   let videoDuration = 0;
@@ -47,19 +58,29 @@
   let running     = false;  // is the rAF loop currently scheduled?
   let lastSeekAt  = 0;      // timestamp (ms) of the last seek, for throttling
   let stageScrollRange = 0; // cached scrollStage.offsetHeight - innerHeight (refreshed on resize)
+  let lastInputAt = 0;      // last user scroll/touch input (idle detection for upgrades)
+  let seekIssuedAt = 0;     // when the latest seek was issued (latency telemetry)
+  const seekLats  = [];     // rolling window of measured seek latencies (ms)
 
   // ========================================
-  //  PRELOADER — fake progress until video
-  //  metadata is ready, then dismiss
+  //  PRELOADER — HONEST buffering progress.
+  //  Fast networks: first frame arrives in <1s → dismissed immediately.
+  //  Slow networks: shows the video's TRUE buffered % (no fake 100%-then-black)
+  //  and holds until the first frame, capped by the 12s safety net — after
+  //  which the poster keeps the hero looking designed while buffering continues.
   // ========================================
   let fakeProgress = 0;
   const fakeInterval = setInterval(() => {
-    if (fakeProgress < 90) {
-      fakeProgress += Math.random() * 8;
-      fakeProgress = Math.min(fakeProgress, 90);
-      fillBar.style.width = fakeProgress + '%';
-      pctLabel.textContent = Math.round(fakeProgress) + ' %';
+    let pct;
+    if (videoDuration && video.buffered.length) {
+      pct = Math.min(99, (video.buffered.end(video.buffered.length - 1) / videoDuration) * 100);
+    } else {
+      // nothing measurable yet — creep gently, never pretend to finish
+      fakeProgress = Math.min(fakeProgress + Math.random() * 5, 30);
+      pct = fakeProgress;
     }
+    fillBar.style.width = pct + '%';
+    pctLabel.textContent = Math.round(pct) + ' %';
   }, 200);
 
   function dismissPreloader() {
@@ -73,6 +94,10 @@
       // trigger hero chapter + kick the scrub loop
       activateChapter(0);
       ensureLoop();
+      // ambient music (no-op until a user gesture allows sound)
+      startMusic();
+      // begin fetching the next quality rung once the page is settled
+      setTimeout(fetchNextRung, 1000);
     }, 250);
   }
 
@@ -103,13 +128,23 @@
   // through to the safety-net timer (that was the ~4.8s stall).
   if (video.readyState >= 2) markReadyAndDismiss();
 
-  // Safety net — only matters if the video genuinely stalls.
+  // Safety net — on very slow networks the honest progress bar holds the
+  // preloader up while real buffering happens; after 12s we reveal the page
+  // regardless (the poster covers the hero until the video pops in).
   setTimeout(() => {
     videoDuration = video.duration || 30;
     if (videoDuration && isFinite(videoDuration)) videoReady = true;
     dismissPreloader();
     console.log('[Cinematic] Safety net fired. Duration:', videoDuration, 'Ready:', videoReady);
-  }, 1800);
+  }, 12000);
+
+  // ---- Seek-latency telemetry (drives the capability controller) ----
+  video.addEventListener('seeked', () => {
+    if (seekIssuedAt) {
+      seekLats.push(performance.now() - seekIssuedAt);
+      if (seekLats.length > 12) seekLats.shift();
+    }
+  });
 
   // ========================================
   //  CHAPTER MANAGEMENT
@@ -203,6 +238,7 @@
         if (delta > MIN_DELTA && isFinite(renderTime) &&
             now - lastSeekAt >= SEEK_INTERVAL) {
           lastSeekAt = now;
+          seekIssuedAt = now;   // telemetry: latency measured on 'seeked'
           video.currentTime = renderTime;
           // Keep the blurred backdrop in sync, but only while it's visible
           // (hidden on mobile → offsetParent null → skipped to save battery).
@@ -249,13 +285,104 @@
 
   // Any input that can move the page wakes the loop. Reading the position
   // happens inside the loop, so sparse iOS momentum events still update smoothly.
+  // Also stamps lastInputAt so quality upgrades only happen while idle.
   ['scroll', 'wheel', 'touchmove'].forEach((evt) => {
-    window.addEventListener(evt, ensureLoop, { passive: true });
+    window.addEventListener(evt, () => {
+      lastInputAt = performance.now();
+      ensureLoop();
+    }, { passive: true });
   });
   // Layout changes: re-measure the range, then run.
   ['resize', 'orientationchange'].forEach((evt) => {
     window.addEventListener(evt, () => { measure(); ensureLoop(); }, { passive: true });
   });
+
+  // ========================================
+  //  CAPABILITY CONTROLLER — start low, climb.
+  //  Background-fetches the next rung; upgrades ONLY when the user is idle AND
+  //  the device has proven decode headroom (measured seek latency). Demotes —
+  //  and remembers the limit — if a rung measures too slow. Sharpness never at
+  //  the cost of smoothness.
+  // ========================================
+  let nextBlobURL = null;   // fully-downloaded next rung, ready to swap in
+  let prevBlobURL = null;   // previous rung kept around for instant demotion
+  let fetching    = false;
+  let swapping    = false;
+
+  function p90() {
+    if (seekLats.length < 6) return 0; // not enough data yet
+    const s = [...seekLats].sort((a, b) => a - b);
+    return s[Math.floor(s.length * 0.9)];
+  }
+
+  function fetchNextRung() {
+    if (fetching || nextBlobURL || swapping || rung >= ceiling) return;
+    // Never compete with the CURRENT rung still buffering (slow networks):
+    // the primary experience always gets the bandwidth first. NOTE: a paused
+    // video is never fully buffered by Chrome (it stops after a healthy lead),
+    // so the test is "comfortably ahead of the playhead", not "complete".
+    // Fast networks pass immediately; slow ones stay blocked — as intended.
+    const bufEnd = video.buffered.length ?
+      video.buffered.end(video.buffered.length - 1) : 0;
+    const aheadOk = bufEnd >= Math.min(videoDuration - 0.5, renderTime + 8);
+    if (videoDuration && !aheadOk) return;
+    fetching = true;
+    fetch(RUNGS[rung + 1].src)
+      .then((res) => { if (!res.ok) throw new Error(res.status); return res.blob(); })
+      .then((blob) => { nextBlobURL = URL.createObjectURL(blob); })
+      .catch(() => { /* network hiccup — a later controller tick retries */ })
+      .finally(() => { fetching = false; });
+  }
+
+  function swapTo(newRung, url) {
+    if (swapping || !url) return;
+    swapping = true;
+    const t = video.currentTime;
+    const oldPrev = prevBlobURL;
+    prevBlobURL = video.src.startsWith('blob:') ? video.src : null;
+    if (oldPrev && oldPrev !== url && oldPrev !== prevBlobURL) {
+      try { URL.revokeObjectURL(oldPrev); } catch (e) { /* already gone */ }
+    }
+    rung = newRung;
+    seekLats.length = 0;      // fresh telemetry for the new rung
+    video.src = url;
+    if (url === nextBlobURL) nextBlobURL = null;
+    video.addEventListener('loadeddata', function onSwapLoaded() {
+      video.removeEventListener('loadeddata', onSwapLoaded);
+      try { video.currentTime = t; } catch (e) { /* not seekable yet */ }
+      primed = false;          // iOS must repaint the new source
+      primeVideo();
+      swapping = false;
+      setTimeout(fetchNextRung, 1500);  // maybe another rung above
+    });
+  }
+
+  setInterval(() => {
+    if (!isReady) return;
+    // DEMOTE: this rung is measurably too slow for smooth scrubbing.
+    if (rung > 0 && seekLats.length >= 8 && p90() > 40) {
+      ceiling = rung - 1;
+      localStorage.setItem('cine-rung', String(ceiling));
+      swapTo(ceiling, prevBlobURL || RUNGS[ceiling].src);
+      return;
+    }
+    // CLIMB: next rung downloaded + user idle + headroom proven (p90() is 0
+    // until the user has actually scrubbed — climbing unwatched is safe; the
+    // demotion path corrects any mistake).
+    if (rung < ceiling && !nextBlobURL) fetchNextRung();
+    if (rung < ceiling && nextBlobURL && !swapping && !running &&
+        performance.now() - lastInputAt > 1500 && p90() <= 24) {
+      swapTo(rung + 1, nextBlobURL);
+    }
+  }, 2000);
+
+  // Debug hook — used by tests and for field diagnosis via console
+  window.__cine = {
+    get rung() { return rung; },
+    get ceiling() { return ceiling; },
+    get p90() { return p90(); },
+    force(r) { if (RUNGS[r]) swapTo(r, RUNGS[r].src); },
+  };
 
   // ========================================
   //  NAV DOT CLICK — scroll to chapter
@@ -296,6 +423,7 @@
   //  Harmless on Chrome/Android/desktop.
   // ========================================
   let primed = false;
+  let lastPlayRejection = '-';   // surfaced in the ?debug=1 overlay
   function primeVideo() {
     if (primed) return;
     const tryPrime = (v) => {
@@ -304,9 +432,16 @@
       if (p && p.then) {
         p.then(() => {
           primed = true;
-          // let one frame present, then freeze; the scrub loop owns time now
-          requestAnimationFrame(() => { v.pause(); });
-        }).catch(() => { /* autoplay rejected — gesture listener retries */ });
+          requestAnimationFrame(() => {
+            v.pause();
+            // micro-seek nudge: forces stubborn devices to actually paint
+            try { v.currentTime = Math.max(0, v.currentTime - 0.001); } catch (e) { /* ok */ }
+          });
+        }).catch((err) => {
+          // autoplay rejected (Low Power Mode / battery saver) — every future
+          // gesture retries until a frame is painted
+          lastPlayRejection = (err && err.name) ? err.name : 'rejected';
+        });
       } else {
         v.pause();
         primed = true;
@@ -318,8 +453,101 @@
     if (videoBlur && videoBlur.offsetParent !== null) tryPrime(videoBlur);
   }
   primeVideo();
-  ['touchstart', 'click'].forEach((evt) => {
-    window.addEventListener(evt, () => { if (!primed) primeVideo(); }, { passive: true });
+
+  // ========================================
+  //  AMBIENT MUSIC — the invite's own soundtrack, looped.
+  //  Browsers forbid sound before a user gesture, so playback arms on the
+  //  first touch/click/key (on mobile, that's the moment scrolling starts).
+  //  The nav speaker toggle persists the visitor's choice.
+  // ========================================
+  const music    = document.getElementById('bgMusic');
+  const soundBtn = document.getElementById('soundToggle');
+  let musicWanted  = localStorage.getItem('cine-muted') !== '1';
+  let musicPlaying = false;
+
+  function updateSoundBtn() {
+    if (soundBtn) soundBtn.classList.toggle('on', musicPlaying);
+  }
+
+  function startMusic() {
+    if (!music || !musicWanted || musicPlaying) return;
+    music.volume = 0;
+    const p = music.play();
+    if (p && p.then) {
+      p.then(() => {
+        musicPlaying = true;
+        updateSoundBtn();
+        // gentle 1.5s fade-in
+        const t0 = performance.now();
+        (function fade() {
+          const k = Math.min(1, (performance.now() - t0) / 1500);
+          music.volume = 0.6 * k;
+          if (k < 1) requestAnimationFrame(fade);
+        })();
+      }).catch(() => { /* blocked — the next gesture retries */ });
+    }
+  }
+
+  if (soundBtn) {
+    soundBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (musicPlaying) {
+        music.pause();
+        musicPlaying = false;
+        musicWanted = false;
+        localStorage.setItem('cine-muted', '1');
+      } else {
+        musicWanted = true;
+        localStorage.setItem('cine-muted', '0');
+        startMusic();
+      }
+      updateSoundBtn();
+    });
+  }
+
+  // Pause music when the tab is hidden; resume when it returns.
+  document.addEventListener('visibilitychange', () => {
+    if (!music) return;
+    if (document.hidden) {
+      if (musicPlaying) music.pause();
+    } else if (musicPlaying && musicWanted) {
+      music.play().catch(() => {});
+    }
   });
+
+  // ---- One gesture path for everything gated on user activation ----
+  ['touchstart', 'pointerdown', 'click', 'keydown'].forEach((evt) => {
+    window.addEventListener(evt, () => {
+      if (!primed) primeVideo();  // retries until a frame is painted
+      startMusic();               // no-op once playing or muted by choice
+    }, { passive: true });
+  });
+
+  // ========================================
+  //  FIELD DEBUG — open with ?debug=1 to read the failing stage right off a
+  //  misbehaving device (one screenshot = full diagnosis).
+  // ========================================
+  if (/[?&]debug=1/.test(location.search)) {
+    const dbg = document.createElement('div');
+    dbg.style.cssText =
+      'position:fixed;left:8px;bottom:8px;z-index:99999;' +
+      'background:rgba(0,0,0,.78);color:#7CFC00;font:10px/1.6 monospace;' +
+      'padding:8px 10px;border-radius:6px;pointer-events:none;white-space:pre';
+    document.body.appendChild(dbg);
+    setInterval(() => {
+      const bufEnd  = video.buffered.length ? video.buffered.end(video.buffered.length - 1).toFixed(1) : '0';
+      const seekEnd = video.seekable.length ? video.seekable.end(video.seekable.length - 1).toFixed(1) : '0';
+      const conn = (navigator.connection && navigator.connection.effectiveType) || '?';
+      dbg.textContent =
+        'src   ' + ((video.currentSrc || '').split('/').pop() || '-').slice(0, 30) +
+        '\nrung  ' + rung + '/' + ceiling + '  p90 ' + Math.round(p90()) + 'ms' +
+        '\nready ' + video.readyState + '  net ' + video.networkState + '  conn ' + conn +
+        '\nbuf   ' + bufEnd + 's  seekable ' + seekEnd + 's  t ' + video.currentTime.toFixed(2) +
+        '\nprime ' + primed + '  playErr ' + lastPlayRejection +
+        '\nvErr  ' + (video.error ? (video.error.code + ' ' + (video.error.message || '')) : '-') +
+        '\nmusic ' + (musicPlaying ? 'on' : 'off');
+    }, 500);
+  }
 
 })();

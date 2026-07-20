@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Trisha & Mainak — A Royal Indian Wedding Celebration. 8th March 2026, Kolkata.">
   <title>Trisha & Mainak — শুভ বিবাহ</title>
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 
@@ -24,12 +24,16 @@
     <video class="video-bg__blur" id="mainVideoBlur" muted playsinline preload="auto" aria-hidden="true" tabindex="-1">
       <source src="videos/wedding-bg.mp4" type="video/mp4">
     </video>
-    <!-- Sharp main video. NO hardcoded <source>: script.js picks the file per
-         device (phones get videos/wedding-mobile.mp4 — short-GOP, cheap to
-         seek on budget SoCs; desktop gets videos/wedding.mp4 HD) so phones
-         never download the HD file. -->
-    <video class="video-bg__main" id="mainVideo" muted playsinline preload="auto"></video>
+    <!-- Sharp main video. NO hardcoded <source>: script.js starts everyone on
+         the smallest quality rung (fast load on any network) and upgrades in
+         the background only on devices that prove decode headroom. The poster
+         guarantees the hero never shows black while buffering. -->
+    <video class="video-bg__main" id="mainVideo" muted playsinline preload="auto"
+           poster="videos/poster.jpg"></video>
   </div>
+
+  <!-- Film grain overlay — cinematic texture; masks compression banding -->
+  <div class="grain" aria-hidden="true"></div>
 
   <!-- Navigation -->
   <nav class="nav" id="nav">
@@ -43,6 +47,15 @@
     <div class="nav__links">
       <a href="#details" class="nav__link">Details</a>
       <a href="#footer" class="nav__link">Venue</a>
+      <button class="nav__sound" id="soundToggle" aria-label="Toggle music">
+        <svg viewBox="0 0 24 24">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path class="snd-wave" d="M15.5 8.5a5 5 0 0 1 0 7"/>
+          <path class="snd-wave" d="M18.5 5.5a9 9 0 0 1 0 13"/>
+          <line class="snd-off" x1="22" y1="9" x2="16" y2="15"/>
+          <line class="snd-off" x1="16" y1="9" x2="22" y2="15"/>
+        </svg>
+      </button>
     </div>
   </nav>
 
@@ -194,6 +207,9 @@
   <!-- Scroll progress -->
   <div class="progress-bar" id="progressBar"></div>
 
-  <script src="script.js?v=2"></script>
+  <!-- Ambient soundtrack (starts on first user gesture; toggle in nav) -->
+  <audio id="bgMusic" loop preload="auto" src="videos/wedding-music.m4a"></audio>
+
+  <script src="script.js?v=3"></script>
 </body>
 </html>
