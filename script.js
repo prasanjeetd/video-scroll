@@ -20,27 +20,41 @@
   const dots        = [...document.querySelectorAll('.nav__dot')];
   const chapters    = [...document.querySelectorAll('.chapter')];
 
-  // ---- Quality ladder (start low, climb) ----
-  // EVERY device starts on the smallest rung → fast first load on any network.
-  // The capability controller (below) then background-fetches the next rung and
-  // upgrades ONLY when the user is idle and the device has PROVEN decode
-  // headroom via measured seek latency. Short GOPs (keyint 4/6) keep scroll-
-  // seeking cheap and uniform even on weak SoCs.
+  // ---- Source strategy: PHONES get one fixed clip, DESKTOP climbs a ladder ----
+  // Phones are decode-limited, so consistency beats sharpness: a single
+  // ALL-INTRA clip (every frame a keyframe) means every scroll-seek decodes
+  // exactly ONE frame → uniform, granular, no "sometimes fast / sometimes
+  // stuck". No mid-session quality swaps (a swap is itself an inconsistency),
+  // and no background rung fetches competing for bandwidth (helps music start).
+  // Desktop has decode headroom, so it keeps the start-low-climb ladder.
+  const isPhone = matchMedia('(pointer: coarse)').matches &&
+                  Math.min(screen.width, screen.height) <= 820;
+
   const RUNGS = [
     { src: 'videos/wedding-540.mp4',  h: 960  },
     { src: 'videos/wedding-720.mp4',  h: 1280 },
     { src: 'videos/wedding-1080.mp4', h: 1920 },
   ];
-  // Ceiling by NEED: never fetch more pixels than the display can actually show.
-  const needH = Math.max(window.innerHeight, screen.height) *
-                (window.devicePixelRatio || 1);
-  let ceiling = RUNGS.findIndex((r) => r.h >= needH);
-  if (ceiling === -1) ceiling = RUNGS.length - 1;
-  // A previous visit may have PROVEN a lower decode limit — respect it.
-  const savedCeil = parseInt(localStorage.getItem('cine-rung') || '', 10);
-  if (!isNaN(savedCeil)) ceiling = Math.min(ceiling, savedCeil);
   let rung = 0;
-  video.src = RUNGS[0].src;
+  let ceiling = 0;   // phones never climb (ceiling stays 0)
+  if (isPhone) {
+    video.src = 'videos/wedding-mobile.mp4';  // 540p all-intra, fixed
+  } else {
+    // Ceiling by NEED: never fetch more pixels than the display can show.
+    const needH = Math.max(window.innerHeight, screen.height) *
+                  (window.devicePixelRatio || 1);
+    ceiling = RUNGS.findIndex((r) => r.h >= needH);
+    if (ceiling === -1) ceiling = RUNGS.length - 1;
+    const savedCeil = parseInt(localStorage.getItem('cine-rung') || '', 10);
+    if (!isNaN(savedCeil)) ceiling = Math.min(ceiling, savedCeil);
+    video.src = RUNGS[0].src;
+  }
+
+  // Loop tuning — snappier & more granular on phones (cheap all-intra seeks
+  // allow it); gentler on desktop where HD seeks want a little more headroom.
+  const EASE          = isPhone ? 0.20 : 0.15;  // ease toward scroll target
+  const MIN_DELTA     = isPhone ? 0.03 : 0.05;  // "caught up" / min move to seek
+  const SEEK_INTERVAL = isPhone ? 25   : 40;    // min ms between seeks
 
   const TOTAL_CHAPTERS = chapters.length;  // 4
   let videoDuration = 0;
@@ -50,9 +64,7 @@
   let seekWarned    = false;   // one-time warning if video isn't seekable
 
   // ---- Scrub-engine state (continuous rAF loop) ----
-  const EASE         = 0.15;   // how quickly rendered time chases the scroll target (0..1)
-  const MIN_DELTA    = 0.05;   // "caught up" tolerance ≈ 1 frame @25fps (s)
-  const SEEK_INTERVAL = 40;    // min ms between seeks (~25/s) — throttle, not a seeking-gate
+  // EASE / MIN_DELTA / SEEK_INTERVAL are set above (branched by isPhone).
   let targetTime  = 0;      // where the scroll says the video should be
   let renderTime  = 0;      // eased time we actually seek to (trails targetTime)
   let running     = false;  // is the rAF loop currently scheduled?

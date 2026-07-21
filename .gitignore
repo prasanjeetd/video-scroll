@@ -7,6 +7,7 @@
 # web-optimized clips the page actually plays. This keeps the
 # large source/unused footage (30–45 MB each) out of the repo.
 videos/*
+!videos/wedding-mobile.mp4
 !videos/wedding-540.mp4
 !videos/wedding-720.mp4
 !videos/wedding-1080.mp4
