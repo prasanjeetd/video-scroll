@@ -477,9 +477,14 @@
   let musicWanted  = localStorage.getItem('cine-muted') !== '1';
   let musicPlaying = false;
 
+  // Reflect the INTENDED state, not just whether audio has started. Sound is
+  // wanted by default, so the toggle reads "on" from the first paint (it plays
+  // at the first touch/scroll — browsers forbid audio before a gesture). Only
+  // an explicit tap-to-mute flips it off.
   function updateSoundBtn() {
-    if (soundBtn) soundBtn.classList.toggle('on', musicPlaying);
+    if (soundBtn) soundBtn.classList.toggle('on', musicWanted);
   }
+  updateSoundBtn();   // set the default "on" icon at load
 
   function startMusic() {
     if (!music || !musicWanted || musicPlaying) return;
@@ -504,10 +509,11 @@
     soundBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (musicPlaying) {
-        music.pause();
-        musicPlaying = false;
+      // Toggle the INTENDED state (works even before audio has started).
+      if (musicWanted) {
         musicWanted = false;
+        if (music) music.pause();
+        musicPlaying = false;
         localStorage.setItem('cine-muted', '1');
       } else {
         musicWanted = true;
