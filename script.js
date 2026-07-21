@@ -8,6 +8,17 @@
 (function () {
   'use strict';
 
+  // ---- Safe storage ----
+  // Some mobile browsers/modes (Samsung Internet anti-tracking, "block all
+  // cookies", strict private modes) THROW on any localStorage/sessionStorage
+  // access. An unguarded throw here would kill the whole script (no music, no
+  // gesture listeners, stuck icon). These wrappers make storage never fatal.
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
+
   // ---- DOM refs ----
   const video       = document.getElementById('mainVideo');
   const videoBlur   = document.getElementById('mainVideoBlur'); // blurred backdrop
@@ -45,7 +56,7 @@
                   (window.devicePixelRatio || 1);
     ceiling = RUNGS.findIndex((r) => r.h >= needH);
     if (ceiling === -1) ceiling = RUNGS.length - 1;
-    const savedCeil = parseInt(localStorage.getItem('cine-rung') || '', 10);
+    const savedCeil = parseInt(lsGet('cine-rung') || '', 10);
     if (!isNaN(savedCeil)) ceiling = Math.min(ceiling, savedCeil);
     video.src = RUNGS[0].src;
   }
@@ -374,7 +385,7 @@
     // DEMOTE: this rung is measurably too slow for smooth scrubbing.
     if (rung > 0 && seekLats.length >= 8 && p90() > 40) {
       ceiling = rung - 1;
-      localStorage.setItem('cine-rung', String(ceiling));
+      lsSet('cine-rung', String(ceiling));
       swapTo(ceiling, prevBlobURL || RUNGS[ceiling].src);
       return;
     }
@@ -474,7 +485,12 @@
   // ========================================
   const music    = document.getElementById('bgMusic');
   const soundBtn = document.getElementById('soundToggle');
-  let musicWanted  = localStorage.getItem('cine-muted') !== '1';
+  // Mute is a PER-SESSION choice (sessionStorage), so every fresh visit greets
+  // the guest with sound-on; muting only lasts the current tab. Also clear any
+  // legacy cross-visit mute that older builds saved to localStorage (that's why
+  // a test phone stayed stuck muted). All storage is guarded (see top).
+  lsDel('cine-muted');
+  let musicWanted  = ssGet('cine-muted') !== '1';
   let musicPlaying = false;
 
   // Reflect the INTENDED state, not just whether audio has started. Sound is
@@ -514,10 +530,10 @@
         musicWanted = false;
         if (music) music.pause();
         musicPlaying = false;
-        localStorage.setItem('cine-muted', '1');
+        ssSet('cine-muted', '1');
       } else {
         musicWanted = true;
-        localStorage.setItem('cine-muted', '0');
+        ssSet('cine-muted', '0');
         startMusic();
       }
       updateSoundBtn();
