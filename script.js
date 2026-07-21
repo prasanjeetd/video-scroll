@@ -526,6 +526,7 @@
   function updateSoundBtn() {
     if (soundBtn) soundBtn.classList.toggle('on', musicWanted);
   }
+  function dropCta() { if (soundBtn) soundBtn.classList.remove('cta'); }
   updateSoundBtn();
 
   // MUTED autoplay is allowed everywhere, so start the track playing silently
@@ -574,6 +575,7 @@
   ['pointerdown', 'touchstart', 'click', 'keydown']
     .forEach((evt) => window.addEventListener(evt, () => {
       if (!_seenEvt[evt]) { _seenEvt[evt] = 1; log('gesture: first ' + evt); }
+      dropCta();
       if (!primed) primeVideo();
       unmuteMusic();
     }, { passive: true }));
@@ -582,11 +584,12 @@
     soundBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (musicWanted) {                 // -> mute (this view only, not persisted)
+      dropCta();
+      if (musicOn) {                     // currently playing → mute (this view only)
         musicWanted = false;
         if (music) music.pause();
         musicOn = false;
-      } else {                           // -> unmute + play (this click is a gesture)
+      } else {                           // not playing → turn ON (this click is the gesture)
         musicWanted = true;
         unmuteMusic();
       }

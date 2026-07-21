@@ -225,22 +225,65 @@ body {
 
 /* Sound toggle — speaker icon; waves shown when music is on, X when off */
 .nav__sound {
-  width: 34px; height: 34px;
-  display: flex; align-items: center; justify-content: center;
-  background: transparent; border: none; cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.3s;
+  display: flex; align-items: center; gap: 10px;
+  background: transparent; border: 1px solid transparent; cursor: pointer;
+  padding: 4px; margin: -4px 0;
+  border-radius: 100px;
+  opacity: 0.6;
+  transition: opacity 0.35s, background 0.45s var(--ease-out),
+              padding 0.45s var(--ease-out), border-color 0.45s;
 }
 .nav__sound:hover { opacity: 1; }
-.nav__sound svg {
+.nav__sound-hint { display: none; }
+.nav__sound-ico {
+  flex: none; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: background 0.45s, width 0.45s, height 0.45s;
+}
+.nav__sound-ico svg {
   width: 18px; height: 18px;
   stroke: var(--text-primary); stroke-width: 1.6; fill: none;
   stroke-linecap: round; stroke-linejoin: round;
+  transition: stroke 0.45s;
 }
 .nav__sound .snd-wave { display: none; }
 .nav__sound .snd-off  { stroke: var(--accent); }
 .nav__sound.on .snd-wave { display: initial; }
 .nav__sound.on .snd-off  { display: none; }
+
+/* CTA state — big, gold, pulsing, labelled: draws the first tap that unlocks
+   sound. JS removes .cta after the first interaction, collapsing it to the
+   compact toggle. */
+.nav__sound.cta {
+  opacity: 1;
+  padding: 5px 6px 5px 18px;
+  border-color: var(--accent);
+  background: rgba(201, 168, 124, 0.10);
+  animation: sound-cta 2s ease-in-out infinite;
+}
+.nav__sound.cta .nav__sound-hint {
+  display: inline;
+  font-family: var(--font-display);
+  font-size: 0.74rem; font-weight: 500;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--accent); white-space: nowrap;
+}
+.nav__sound.cta .nav__sound-ico { background: var(--accent); width: 34px; height: 34px; }
+.nav__sound.cta .nav__sound-ico svg { stroke: var(--bg); }
+.nav__sound.cta .snd-wave { display: initial; }
+.nav__sound.cta .snd-off  { display: none; }
+@keyframes sound-cta {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 168, 124, 0.45); }
+  70%      { box-shadow: 0 0 0 11px rgba(201, 168, 124, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .nav__sound.cta { animation: none; } }
+
+/* Small phones: shrink the label so the pill fits the nav */
+@media (max-width: 420px) {
+  .nav__sound.cta { padding-left: 14px; gap: 8px; }
+  .nav__sound.cta .nav__sound-hint { font-size: 0.66rem; letter-spacing: 0.06em; }
+}
 .nav__link {
   font-size: 0.72rem; font-weight: 400;
   letter-spacing: 0.1em;

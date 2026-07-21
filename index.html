@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Trisha & Mainak — A Royal Indian Wedding Celebration. 8th March 2026, Kolkata.">
   <title>Trisha & Mainak — শুভ বিবাহ</title>
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -47,14 +47,17 @@
     <div class="nav__links">
       <a href="#details" class="nav__link">Details</a>
       <a href="#footer" class="nav__link">Venue</a>
-      <button class="nav__sound" id="soundToggle" aria-label="Toggle music">
-        <svg viewBox="0 0 24 24">
-          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-          <path class="snd-wave" d="M15.5 8.5a5 5 0 0 1 0 7"/>
-          <path class="snd-wave" d="M18.5 5.5a9 9 0 0 1 0 13"/>
-          <line class="snd-off" x1="22" y1="9" x2="16" y2="15"/>
-          <line class="snd-off" x1="16" y1="9" x2="22" y2="15"/>
-        </svg>
+      <button class="nav__sound cta" id="soundToggle" aria-label="Turn on sound">
+        <span class="nav__sound-hint">Tap for sound</span>
+        <span class="nav__sound-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            <path class="snd-wave" d="M15.5 8.5a5 5 0 0 1 0 7"/>
+            <path class="snd-wave" d="M18.5 5.5a9 9 0 0 1 0 13"/>
+            <line class="snd-off" x1="22" y1="9" x2="16" y2="15"/>
+            <line class="snd-off" x1="16" y1="9" x2="22" y2="15"/>
+          </svg>
+        </span>
       </button>
     </div>
   </nav>
@@ -210,6 +213,6 @@
   <!-- Ambient soundtrack (starts on first user gesture; toggle in nav) -->
   <audio id="bgMusic" loop preload="auto" src="videos/wedding-music.m4a"></audio>
 
-  <script src="script.js?v=9"></script>
+  <script src="script.js?v=10"></script>
 </body>
 </html>
