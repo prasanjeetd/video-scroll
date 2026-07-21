@@ -8,6 +8,29 @@
 (function () {
   'use strict';
 
+  // ---- Diagnostic log ----
+  // Records device info + the full load/music/gesture/autoplay flow with real
+  // results. View on-device by adding ?debug=1 (or ?log=1) to the URL — the
+  // panel has Copy & Download so the real behaviour can be shared. This is how
+  // we see the truth on a real phone (headless does NOT enforce autoplay rules).
+  const LOG = [];
+  const T0 = (window.performance && performance.now) ? performance.now() : Date.now();
+  function nowMs() { return Math.round((((window.performance && performance.now) ? performance.now() : Date.now())) - T0); }
+  function log(msg) {
+    try {
+      LOG.push('[' + String(nowMs()).padStart(6) + 'ms] ' + msg);
+      if (LOG.length > 500) LOG.shift();
+    } catch (e) { /* logging must never throw */ }
+  }
+  window.addEventListener('error', function (e) {
+    log('JS-ERROR: ' + (e && e.message ? e.message : e) + (e && e.filename ? ' @' + (e.filename.split('/').pop()) + ':' + e.lineno : ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    log('PROMISE-REJECT: ' + (r && (r.name || r.message) ? ((r.name || '') + ' ' + (r.message || '')).trim() : r));
+  });
+  log('script start');
+
   // ---- Safe storage ----
   // Some mobile browsers/modes (Samsung Internet anti-tracking, "block all
   // cookies", strict private modes) THROW on any localStorage/sessionStorage
@@ -67,6 +90,23 @@
   const MIN_DELTA     = isPhone ? 0.03 : 0.05;  // "caught up" / min move to seek
   const SEEK_INTERVAL = isPhone ? 25   : 40;    // min ms between seeks
 
+  // ---- Environment snapshot (for the diagnostic log) ----
+  log('device=' + (isPhone ? 'PHONE' : 'DESKTOP') +
+      ' screen=' + screen.width + 'x' + screen.height +
+      ' dpr=' + (window.devicePixelRatio || 1) +
+      ' vp=' + window.innerWidth + 'x' + window.innerHeight);
+  log('conn=' + ((navigator.connection && navigator.connection.effectiveType) || '?') +
+      ' autoplayPolicy=' + (navigator.getAutoplayPolicy ? navigator.getAutoplayPolicy('mediaelement') : 'n/a'));
+  log('video.src=' + (video.currentSrc || video.src || '').split('/').pop());
+  log('UA=' + navigator.userAgent);
+  ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'stalled', 'suspend', 'waiting', 'error']
+    .forEach(function (ev) {
+      video.addEventListener(ev, function () {
+        log('video:' + ev + ' rs=' + video.readyState +
+            (video.error ? ' ERR=' + video.error.code : ''));
+      });
+    });
+
   const TOTAL_CHAPTERS = chapters.length;  // 4
   let videoDuration = 0;
   let videoReady    = false;   // true once we can scrub the video
@@ -109,26 +149,21 @@
   function dismissPreloader() {
     if (isReady) return; // prevent double-call
     isReady = true;
+    log('preloader dismissed (videoReady=' + videoReady + ')');
     clearInterval(fakeInterval);
     fillBar.style.width = '100%';
     pctLabel.textContent = '100 %';
     setTimeout(() => {
       preloader.classList.add('hidden');
-      // trigger hero chapter + kick the scrub loop
       activateChapter(0);
       ensureLoop();
-      // ambient music (no-op until a user gesture allows sound)
-      startMusic();
-      // begin fetching the next quality rung once the page is settled
-      setTimeout(fetchNextRung, 1000);
+      primeVideo();
+      setTimeout(fetchNextRung, 1000);  // desktop: background quality climb
     }, 250);
   }
 
   // ---- Video readiness ----
-  // The video is usable for scrubbing as soon as the first frame is decoded
-  // (readyState >= 2 / HAVE_CURRENT_DATA). We do NOT wait for canplaythrough
-  // (full buffering) — that's why the loader used to hang on the 4s safety net.
-
+  // Usable for scrubbing as soon as the first frame is decoded (readyState >= 2).
   function markReadyAndDismiss() {
     if (video.duration && isFinite(video.duration)) videoDuration = video.duration;
     if (!videoDuration || !isFinite(videoDuration)) videoDuration = 30;
@@ -142,23 +177,16 @@
     console.log('[Cinematic] Video metadata loaded. Duration:', videoDuration);
   });
 
-  // First frame ready → reveal the page immediately.
   video.addEventListener('loadeddata', markReadyAndDismiss);
   video.addEventListener('canplay', markReadyAndDismiss);
-
-  // CRUCIAL: on fast/cached loads the events above can fire BEFORE this script
-  // attaches its listeners. Check the current state right now so we don't fall
-  // through to the safety-net timer (that was the ~4.8s stall).
   if (video.readyState >= 2) markReadyAndDismiss();
 
-  // Safety net — on very slow networks the honest progress bar holds the
-  // preloader up while real buffering happens; after 12s we reveal the page
-  // regardless (the poster covers the hero until the video pops in).
+  // Safety net — reveal after 12s even if still buffering (poster covers the hero).
   setTimeout(() => {
     videoDuration = video.duration || 30;
     if (videoDuration && isFinite(videoDuration)) videoReady = true;
     dismissPreloader();
-    console.log('[Cinematic] Safety net fired. Duration:', videoDuration, 'Ready:', videoReady);
+    console.log('[Cinematic] Safety net fired. Ready:', videoReady);
   }, 12000);
 
   // ---- Seek-latency telemetry (drives the capability controller) ----
@@ -485,103 +513,166 @@
   // ========================================
   const music    = document.getElementById('bgMusic');
   const soundBtn = document.getElementById('soundToggle');
-  // Mute is a PER-SESSION choice (sessionStorage), so every fresh visit greets
-  // the guest with sound-on; muting only lasts the current tab. Also clear any
-  // legacy cross-visit mute that older builds saved to localStorage (that's why
-  // a test phone stayed stuck muted). All storage is guarded (see top).
-  lsDel('cine-muted');
-  let musicWanted  = ssGet('cine-muted') !== '1';
-  let musicPlaying = false;
+  // Mute is a PER-SESSION choice; every fresh visit greets the guest with sound
+  // wanted. Clear any legacy cross-visit mute. All storage is guarded (see top).
+  // Sound is ON by default on EVERY load — no persisted mute (that only caused
+  // "stuck muted" confusion). The first real click/tap anywhere starts it; the
+  // speaker toggle mutes/unmutes for the current view only.
+  lsDel('cine-muted');   // clean any legacy stored mute from old builds
+  let musicWanted = true;
+  let musicOn     = false;   // true once we've unmuted (sound is audible)
 
-  // Reflect the INTENDED state, not just whether audio has started. Sound is
-  // wanted by default, so the toggle reads "on" from the first paint (it plays
-  // at the first touch/scroll — browsers forbid audio before a gesture). Only
-  // an explicit tap-to-mute flips it off.
+  // Icon reflects the INTENDED state (on by default).
   function updateSoundBtn() {
     if (soundBtn) soundBtn.classList.toggle('on', musicWanted);
   }
-  updateSoundBtn();   // set the default "on" icon at load
+  updateSoundBtn();
 
-  function startMusic() {
-    if (!music || !musicWanted || musicPlaying) return;
-    music.volume = 0;
-    const p = music.play();
-    if (p && p.then) {
-      p.then(() => {
-        musicPlaying = true;
-        updateSoundBtn();
-        // gentle 1.5s fade-in
-        const t0 = performance.now();
-        (function fade() {
-          const k = Math.min(1, (performance.now() - t0) / 1500);
-          music.volume = 0.6 * k;
-          if (k < 1) requestAnimationFrame(fade);
-        })();
-      }).catch(() => { /* blocked — the next gesture retries */ });
-    }
+  // MUTED autoplay is allowed everywhere, so start the track playing silently
+  // right away. The FIRST interaction — crucially a SCROLL, which on mobile is a
+  // touch gesture — UNMUTES it, so the moment a guest starts scrolling the music
+  // fades in. (Desktop wheel isn't a gesture, so a click/keypress or the nav
+  // speaker unmutes there.)
+  if (music) {
+    music.muted = true;
+    music.loop = true;
+    log('music: trying muted autoplay');
+    const _mp = music.play();
+    if (_mp && _mp.then) _mp.then(() => log('music: muted autoplay OK (silent)'))
+                            .catch((e) => log('music: muted autoplay REJECTED ' + (e && e.name || e)));
   }
+
+  function fadeInMusic() {
+    if (!music) return;
+    try { music.volume = 0; } catch (e) { /* iOS ignores volume — plays full */ }
+    const t0 = performance.now();
+    (function fade() {
+      const k = Math.min(1, (performance.now() - t0) / 1500);
+      try { music.volume = 0.6 * k; } catch (e) {}
+      if (k < 1) requestAnimationFrame(fade);
+    })();
+  }
+
+  function unmuteMusic() {
+    if (!music || musicOn || !musicWanted) return;
+    log('unmute: attempt');
+    musicOn = true;
+    music.muted = false;
+    const p = music.play();   // ensure it's actually playing
+    if (p && p.then) p.then(() => log('unmute: play() OK → SOUND ON'))
+                        .catch((e) => { musicOn = false; log('unmute: play() REJECTED ' + (e && e.name || e)); });
+    fadeInMusic();
+    updateSoundBtn();
+  }
+
+  // The first real GESTURE starts the music. We listen only to activation
+  // events (pointerdown/touchstart/click/keydown) — NOT scroll/wheel, which the
+  // browser never treats as a gesture (they just spam NotAllowedError). On
+  // mobile the first finger touch — whether a tap or the start of a scroll —
+  // fires touchstart, so scrolling still triggers it there.
+  const _seenEvt = {};
+  ['pointerdown', 'touchstart', 'click', 'keydown']
+    .forEach((evt) => window.addEventListener(evt, () => {
+      if (!_seenEvt[evt]) { _seenEvt[evt] = 1; log('gesture: first ' + evt); }
+      if (!primed) primeVideo();
+      unmuteMusic();
+    }, { passive: true }));
 
   if (soundBtn) {
     soundBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      // Toggle the INTENDED state (works even before audio has started).
-      if (musicWanted) {
+      if (musicWanted) {                 // -> mute (this view only, not persisted)
         musicWanted = false;
         if (music) music.pause();
-        musicPlaying = false;
-        ssSet('cine-muted', '1');
-      } else {
+        musicOn = false;
+      } else {                           // -> unmute + play (this click is a gesture)
         musicWanted = true;
-        ssSet('cine-muted', '0');
-        startMusic();
+        unmuteMusic();
       }
       updateSoundBtn();
     });
   }
 
-  // Pause music when the tab is hidden; resume when it returns.
+  // Pause when tab hidden; resume when it returns (only if it was on & wanted).
   document.addEventListener('visibilitychange', () => {
     if (!music) return;
-    if (document.hidden) {
-      if (musicPlaying) music.pause();
-    } else if (musicPlaying && musicWanted) {
-      music.play().catch(() => {});
-    }
+    if (document.hidden) music.pause();
+    else if (musicOn && musicWanted) music.play().catch(() => {});
   });
 
-  // ---- One gesture path for everything gated on user activation ----
-  ['touchstart', 'pointerdown', 'click', 'keydown'].forEach((evt) => {
-    window.addEventListener(evt, () => {
-      if (!primed) primeVideo();  // retries until a frame is painted
-      startMusic();               // no-op once playing or muted by choice
-    }, { passive: true });
-  });
+  // ---- Log dump (shared by the on-screen panel and the dev beacon) ----
+  function dumpLog() {
+    const bufEnd  = video.buffered.length ? video.buffered.end(video.buffered.length - 1).toFixed(1) : '0';
+    const seekEnd = video.seekable.length ? video.seekable.end(video.seekable.length - 1).toFixed(1) : '0';
+    const head =
+      'STATE  music: on=' + musicOn + ' wanted=' + musicWanted +
+        ' muted=' + (music ? music.muted : '?') + ' paused=' + (music ? music.paused : '?') + '\n' +
+      '       video: rs=' + video.readyState + ' t=' + video.currentTime.toFixed(1) +
+        ' buf=' + bufEnd + 's seek=' + seekEnd + 's rung=' + rung + '/' + ceiling +
+        ' primed=' + primed + '\n' +
+      '------------------------------------------------------------\n';
+    return head + LOG.join('\n');
+  }
+
+  // On localhost, beacon the log to serve.js (/log) so it can be read
+  // server-side during dev — no copy/paste. Completely no-op in production.
+  if (/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname)) {
+    const beacon = () => {
+      try {
+        const body = dumpLog();
+        if (navigator.sendBeacon) navigator.sendBeacon('/log', body);
+        else fetch('/log', { method: 'POST', body: body, keepalive: true }).catch(() => {});
+      } catch (e) {}
+    };
+    setInterval(beacon, 2500);
+    document.addEventListener('visibilitychange', beacon);
+    window.addEventListener('pagehide', beacon);
+    log('dev log beacon active (localhost)');
+  }
 
   // ========================================
-  //  FIELD DEBUG — open with ?debug=1 to read the failing stage right off a
-  //  misbehaving device (one screenshot = full diagnosis).
+  //  DIAGNOSTIC LOG PANEL — open with ?debug=1 (or ?log=1).
+  //  Shows live state + the full event log, with Copy & Download so the real
+  //  device behaviour can be shared. This is our ground truth.
   // ========================================
-  if (/[?&]debug=1/.test(location.search)) {
-    const dbg = document.createElement('div');
-    dbg.style.cssText =
-      'position:fixed;left:8px;bottom:8px;z-index:99999;' +
-      'background:rgba(0,0,0,.78);color:#7CFC00;font:10px/1.6 monospace;' +
-      'padding:8px 10px;border-radius:6px;pointer-events:none;white-space:pre';
-    document.body.appendChild(dbg);
-    setInterval(() => {
-      const bufEnd  = video.buffered.length ? video.buffered.end(video.buffered.length - 1).toFixed(1) : '0';
-      const seekEnd = video.seekable.length ? video.seekable.end(video.seekable.length - 1).toFixed(1) : '0';
-      const conn = (navigator.connection && navigator.connection.effectiveType) || '?';
-      dbg.textContent =
-        'src   ' + ((video.currentSrc || '').split('/').pop() || '-').slice(0, 30) +
-        '\nrung  ' + rung + '/' + ceiling + '  p90 ' + Math.round(p90()) + 'ms' +
-        '\nready ' + video.readyState + '  net ' + video.networkState + '  conn ' + conn +
-        '\nbuf   ' + bufEnd + 's  seekable ' + seekEnd + 's  t ' + video.currentTime.toFixed(2) +
-        '\nprime ' + primed + '  playErr ' + lastPlayRejection +
-        '\nvErr  ' + (video.error ? (video.error.code + ' ' + (video.error.message || '')) : '-') +
-        '\nmusic ' + (musicPlaying ? 'on' : 'off');
-    }, 500);
+  if (/[?&](debug|log)=1/.test(location.search)) {
+    const panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:100000;' +
+      'max-height:46vh;display:flex;flex-direction:column;background:rgba(0,0,0,.92);' +
+      'color:#8f8;font:10px/1.45 monospace;border-top:1px solid #555;';
+    const bar = document.createElement('div');
+    bar.style.cssText = 'display:flex;gap:6px;align-items:center;padding:6px 8px;background:#111;border-bottom:1px solid #333';
+    const mk = (t) => { const btn = document.createElement('button'); btn.textContent = t;
+      btn.style.cssText = 'background:#c9a87c;color:#000;border:0;border-radius:4px;padding:5px 12px;font:11px monospace;cursor:pointer'; return btn; };
+    const copyBtn = mk('Copy'); const dlBtn = mk('Download');
+    const status = document.createElement('span'); status.style.cssText = 'margin-left:auto;color:#fc9';
+    bar.appendChild(copyBtn); bar.appendChild(dlBtn); bar.appendChild(status);
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'margin:0;padding:8px;overflow:auto;flex:1;white-space:pre-wrap;word-break:break-word';
+    panel.appendChild(bar); panel.appendChild(pre);
+    document.body.appendChild(panel);
+    // interacting with the panel must not scroll the page or trigger unmute
+    ['click', 'touchstart', 'pointerdown', 'wheel'].forEach((e) =>
+      panel.addEventListener(e, (ev) => ev.stopPropagation(), { passive: true }));
+
+    setInterval(() => { pre.textContent = dumpLog(); }, 400);
+    copyBtn.onclick = () => {
+      const t = dumpLog();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(t).then(() => { status.textContent = 'copied ✓'; },
+          () => { status.textContent = 'copy failed — screenshot instead'; });
+      } else { status.textContent = 'no clipboard — screenshot instead'; }
+    };
+    dlBtn.onclick = () => {
+      try {
+        const blob = new Blob([dumpLog()], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = 'cinemaps-log.txt';
+        document.body.appendChild(a); a.click(); a.remove();
+        status.textContent = 'downloaded ✓';
+      } catch (e) { status.textContent = 'download failed — screenshot'; }
+    };
   }
 
 })();

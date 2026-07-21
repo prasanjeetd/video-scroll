@@ -38,9 +38,23 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
+const LOGFILE = path.join(require('os').tmpdir(), 'cinemaps-devlog.txt');
+
 http.createServer((req, res) => {
   let pathname = decodeURIComponent(url.parse(req.url).pathname);
   if (pathname === '/') pathname = '/index.html';
+
+  // Dev diagnostics: the page beacons its runtime log here so it can be read
+  // server-side during local testing. Written to os tmp: cinemaps-devlog.txt
+  if (req.method === 'POST' && pathname === '/log') {
+    let body = '';
+    req.on('data', (c) => { body += c; if (body.length > 200000) req.destroy(); });
+    req.on('end', () => {
+      try { fs.writeFileSync(LOGFILE, body); } catch (e) {}
+      res.writeHead(204); res.end();
+    });
+    return;
+  }
 
   // Prevent directory traversal
   const file = path.normalize(path.join(ROOT, pathname));
